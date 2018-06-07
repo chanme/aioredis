@@ -332,9 +332,23 @@ class ConnectionsPool(AbcPool):
                     assert not conn.closed, conn
                     assert conn not in self._used, (conn, self._used)
                     self._used.add(conn)
+                    # Help debugging why the context manager above
+                    # sometimes fails to release the lock.
+                    if not self._cond.locked():
+                        raise RuntimeError(
+                            'Lock was released in the middle of acquire')
                     return conn
                 else:
-                    await self._cond.wait()
+                    # Help debugging why the context manager above
+                    # sometimes fails to release the lock.
+                    try:
+                        await self._cond.wait()
+                    except Exception as exc:
+                        if not self._cond.locked():
+                            raise RuntimeError(
+                                'wait returned without holding the lock: '
+                                + str(exc))
+                        raise
 
     def release(self, conn):
         """Returns used connection back into pool.
